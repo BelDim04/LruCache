@@ -162,24 +162,21 @@ namespace Test
         std::atomic<bool> _locked{false};
     };
 
-    void run(size_t id, size_t world_count)
+    void run(size_t id, size_t world_count, SpinLock &spinlock)
     {
-        static SpinLock spinlock;
         auto &lru_cache(::DnsCache::get_instance());
         size_t roundIters(2 * id);
         for (size_t i = 0; i < 1e8; ++i)
         {
             if (!(i % roundIters))
             {
-                spinlock.lock();
+                std::lock_guard guard(spinlock);
                 lru_cache.update(std::to_string(id) + "round" + std::to_string(i / roundIters), std::to_string(id) + "Round" + std::to_string(i / roundIters));
-                spinlock.unlock();
             }
             else
             {
-                spinlock.lock();
+                std::lock_guard guard(spinlock);
                 auto res = lru_cache.resolve(std::to_string((i + id) % world_count) + "round" + std::to_string(i / (2 * world_count)));
-                spinlock.unlock();
             }
         }
     }
@@ -213,11 +210,12 @@ int main()
     DnsCache::get_instance(50000);
     std::vector<std::thread> threads;
     size_t world_count(4);
+    Test::SpinLock spinlock;
     std::cout << "Perf test start\n";
     auto start = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < world_count; ++i)
     {
-        threads.push_back(std::thread(Test::run, i + 1, world_count));
+        threads.push_back(std::thread(Test::run, i + 1, world_count, std::ref(spinlock)));
     }
     for (size_t i = 0; i < world_count; ++i)
     {
